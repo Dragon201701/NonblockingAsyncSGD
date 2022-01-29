@@ -1,2 +1,2 @@
 # HPML
-high performance computing, machine learning, EECS
+This is a temp repo for HPML final project.
