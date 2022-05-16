@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name=HPMLproject
-#SBATCH --nodes=17
+#SBATCH --nodes=5
 #SBATCH --ntasks-per-node=1
 #SBATCH --output=out/out_%j
 #SBATCH --error=out/err_%j
