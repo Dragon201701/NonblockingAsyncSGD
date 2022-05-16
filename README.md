@@ -4,7 +4,7 @@
 
 # Non-blocking Synchronous SGD: a novel communication scheme for distributed deep learning
 
-This repository is for NYU High Performance Computing for Machine Learning Final-Project. 
+This repository is for NYU - High Performance Computing for Machine Learning Final-Project. 
 
 - `Author`: Haoze He `NYUID`: hh2537
 
