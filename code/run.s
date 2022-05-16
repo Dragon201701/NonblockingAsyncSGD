@@ -21,7 +21,6 @@ module load openmpi/intel/4.1.1
 
 source activate mpienv
 cd /scratch/hh2537/pytorch
-python setup.py develop 
 
 num_worker=5
 n_step=300
