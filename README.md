@@ -2,7 +2,7 @@
 
 
 
-# Non-blocking Synchronous SGD: a novel communication scheme for distributed deep learning (HPML Final-Project)
+# Non-blocking Synchronous SGD: a novel communication scheme for distributed deep learning
 
 This repository is for NYU High Performance Computing for Machine Learning Final-Project. 
 
