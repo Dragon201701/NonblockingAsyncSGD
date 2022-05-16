@@ -8,13 +8,13 @@ This repository is for NYU High Performance Computing for Machine Learning Final
 
 - `Author`: Haoze He `NYUID`: hh2537
 
-##Abstract
+## Abstract
 
 In recent years, the size of deep learning models, number of computations, and data set increase dramatically. Distributed deep learning system aims to reduce the overall training time utilize multiple computing devices to solve this problem. However, the data communication between computing devices becomes the bottleneck. When and how to do communication between different workers also becomes a problem. There are two dominant communication schemes to solve this problem: synchronous distributed stochastic gradient descent(SSGD) and asynchronization stochastic gradient descent(ASSGD). The synchronization in the data-parallel distributed deep learning works in the following way: before the next iteration of training, every worker should wait for all workers to finish the transmission of parameters in the current iteration. In the asynchronous framework, the parameter server(PS) can update the global model with the updates from several or even one worker instead of all workers. In contrast to synchronous algorithms, the asynchronous framework allows more independent updates of the nodes, which cut down the data transmitted during the communication between the current workers and the master.
 
 
 
-##Problem analysis
+## Problem analysis
 
 However, these two schemes have their own advantage and drawbacks. As for SSGD, since the server and every worker should wait for all workers to finish the transmission of parameters in the current iteration, it will waste a lot of time and lead to slow converge.[fig1] As for asynchronous, since the worker may update PS parameters based on previous model, it will lead to lower accuracy.[fig2] To solve these problem, more adapted schemes were proposed: downpour, backup workers, etc. However, these methods alleviate the problems instead of solving it. The trade-off between training efficiency and accuracy remains. These phenomenons are common especially when workers have different GPU, which will lead to huge gap for training efficiency.
 
