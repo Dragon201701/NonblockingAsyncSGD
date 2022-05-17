@@ -16,7 +16,7 @@ class DownpourSGD():
         
         broadcast_message(model, MPI_MessageCode.UpdateParameters, src=0)
         
-        self.optimizer = Adam(model.parameters())
+        self.optimizer = Adam(model.parameters(), )
         self.lr = self.optimizer.defaults['lr']
         self.accumulated_gradients = torch.zeros(
             serialize_parameters(model).size())

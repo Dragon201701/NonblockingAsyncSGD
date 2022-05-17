@@ -1,15 +1,16 @@
+import torch.multiprocessing as mp
 import torch.nn as nn
 import torch
 import torch.distributed as dist
-
 from config import get_config
-from data_loader import get_data_loader, partition_dataset
-from model import Net
+from data_loader import partition_dataset
 from optimizer import DownpourSGD
 from parameter_server import ParameterServer
 from messaging import MPI_MessageCode, send_message, broadcast_message
 import time
+from resnet import *
 
+dist.init_process_group(backend='mpi')
 
 """
 Author: Haoze He
@@ -19,11 +20,10 @@ JOB NAME: HPML-Final-Project
 Project title: Non-blocking Synchronous SGD: a novel communication scheme for distributed deep learning
 """
 
-
-
-
 class AverageMeter(object):
-    """Computes and stores the average and current value"""
+    """
+    Method discription: initialize acc, avg, sum and, count then update them.
+    """
 
     def __init__(self):
         self.reset()
@@ -42,9 +42,18 @@ class AverageMeter(object):
 
 
 def accuracy(output, target, topk=3):
-    """Computes the accuracy over the k top predictions for the specified values of k"""
+    """
+    Method discription: Computes the accuracy over the k top predictions for the specified values of k
+    """
+
     _, predicted = output.topk(topk, 1, True, True)
     batch_size = target.size(0)
+
+    print("the batch size is :", batch_size)
+    print("the target is :", target)
+    print("the target[1]", target[1])
+    print("the target[1][predicted[1]]", target[1][predicted[1]])
+    print("the target[1][predicted[1]]", target[1][predicted[1]].sum())
     prec_k = 0
     prec_1 = 0
     count_k = 0
@@ -60,7 +69,7 @@ def accuracy(output, target, topk=3):
 def param_server(config):
     device = torch.device(
         "cuda" if config.gpu and torch.cuda.is_available() else "cpu")
-    model = Net(3, 17).to(device)
+    model = ResNet50().to(device)
     server = ParameterServer(model)
     if config.log:
         print("Starting parameter server")
@@ -72,20 +81,26 @@ def param_server(config):
 
 
 def train(config, worker_group):
+    exec_start_time = time.monotonic()
     rank = dist.get_rank()
     wsize = dist.get_world_size()
     device = torch.device(
         "cuda" if config.gpu and torch.cuda.is_available() else "cpu")
-    dataloader = partition_dataset(config)
-    model = Net(3, 17).to(device)
+    dataloader, bsz = partition_dataset(config)
+    print('Number of batches = %s' % (len(dataloader)))
+    model = ResNet50().to(device)
     optimizer = DownpourSGD(model, n_step=config.n_step)
-    loss_fn = nn.BCELoss()
+    loss_fn = nn.CrossEntropyLoss()
     model.train()
 
     avg_loss = AverageMeter()
     avg_top1 = AverageMeter()
     avg_top3 = AverageMeter()
-    total_time = 0.0
+
+    avg_loss_value = 0.0
+    avg_top1_value = 0.0
+    avg_top3_value = 0.0
+    total_time = time.monotonic() - exec_start_time
 
     for epoch in range(1, config.epochs+1):
         start_time = time.monotonic()
@@ -94,13 +109,28 @@ def train(config, worker_group):
         avg_loss.reset()
         avg_top1.reset()
         avg_top3.reset()
-
-        for batch_idx, (data, target) in enumerate(dataloader, 1):
+        #for data, target in dataloader:
+        for batch_idx, (data, target) in enumerate(dataloader):
             total_sample += data.shape[0]
             optimizer.zero_grad()
             data = data.to(device)
             target = target.to(device)
             output = model(data)
+
+            print("dataloader is:")
+            print(dataloader)
+
+
+            print("batch id is:")
+            print(batch_idx)
+
+            print("output is :")
+            print(output)
+
+            print("target is:")
+            print(target)
+
+
             loss = loss_fn(output, target)
             loss.backward()
             optimizer.step()
@@ -116,6 +146,14 @@ def train(config, worker_group):
                     epoch, batch_idx * len(data), len(dataloader.dataset),
                     100. * batch_idx / len(dataloader), loss.item(), top1, top3))
 
+        epoch_time = time.monotonic() - start_time
+        total_time += epoch_time
+        loss_sum = torch.tensor(total_sample*avg_loss.avg)
+        top1_sum = torch.tensor(total_sample*avg_top1.avg)
+        top3_sum = torch.tensor(total_sample*avg_top3.avg)
+        total_sample_sum = torch.tensor(total_sample)
+
+
         dist.barrier(worker_group)
 
         if rank == 1:
@@ -123,36 +161,28 @@ def train(config, worker_group):
             _p.wait()
         
         broadcast_message(model, MPI_MessageCode.UpdateParameters, src=0)
-
-        epoch_time = time.monotonic() - start_time
-        print('Rank: {} Epoch: {} loss: {:.6f} prec@1: {:.6f} prec@3: {:.6f} exec_time: {}'.format(
-            rank, epoch, avg_loss.avg, avg_top1.avg, avg_top3.avg, epoch_time))
         
-        total_time += epoch_time
+        dist.all_reduce(loss_sum, op=dist.ReduceOp.SUM, group=worker_group)
+        dist.all_reduce(top1_sum, op=dist.ReduceOp.SUM, group=worker_group)
+        dist.all_reduce(top3_sum, op=dist.ReduceOp.SUM, group=worker_group)
+        dist.all_reduce(total_sample_sum,
+                        op=dist.ReduceOp.SUM, group=worker_group)
 
-    loss_sum = torch.tensor(total_sample*avg_loss.avg)
-    top1_sum = torch.tensor(total_sample*avg_top1.avg)
-    top3_sum = torch.tensor(total_sample*avg_top3.avg)
-    total_sample_sum = torch.tensor(total_sample)
+        avg_loss_value = loss_sum.item() / total_sample_sum.item()
+        avg_top1_value = top1_sum.item() / total_sample_sum.item()
+        avg_top3_value = top3_sum.item() / total_sample_sum.item()
 
-    dist.all_reduce(loss_sum, op=dist.ReduceOp.SUM, group=worker_group)
-    dist.all_reduce(top1_sum, op=dist.ReduceOp.SUM, group=worker_group)
-    dist.all_reduce(top3_sum, op=dist.ReduceOp.SUM, group=worker_group)
-    dist.all_reduce(total_sample_sum,
-                    op=dist.ReduceOp.SUM, group=worker_group)
-
-    avg_loss_value = loss_sum.item() / total_sample_sum.item()
-    avg_top1_value = top1_sum.item() / total_sample_sum.item()
-    avg_top3_value = top3_sum.item() / total_sample_sum.item()
-
-    print('Rank: {} loss: {:.6f} prec@1: {:.6f} prec@3: {:.6f} total_exec_time: {}'.format(
-        rank, avg_loss_value, avg_top1_value, avg_top3_value, total_time))
-
+        
+        print('Rank: {} Epoch: {} loss: {:.6f} prec@1: {:.6f} prec@3: {:.6f} exec_time: {}'.format(
+            rank, epoch, avg_loss_value, avg_top1_value, avg_top3_value, epoch_time))
 
     if rank == 1:
         _p = send_message(MPI_MessageCode.CloseServer, torch.tensor([0.0]))
         _p.wait()
-
+        
+    dist.barrier(worker_group)
+    print('Rank: {} loss: {:.6f} prec@1: {:.6f} prec@3: {:.6f} total_exec_time: {}'.format(
+        rank, avg_loss_value, avg_top1_value, avg_top3_value, total_time))
 
 def main(config):
     rank = dist.get_rank()
@@ -167,9 +197,4 @@ def main(config):
 
 
 if __name__ == "__main__":
-    torch.multiprocessing.set_start_method('spawn')
-    dist.init_process_group(backend='mpi')
     main(get_config())
-
-
-

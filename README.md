@@ -48,7 +48,7 @@ As for the `NBSSGD` scheme,  I will take single PS parameter update as example: 
 
 ##Approach/Techniques
 
-`1`:**Hardware Approach**I can start from simple ones using existing resources: the NYU Greene HPC clusters / Supercomputer. To get computing resources shourtly, I use multiple cpu-nodes as workers and the parameter server instead of multiple-gpus(will be hard to get).  
+`1`:**Hardware Approach**I can start from simple ones using existing resources: the NYU Greene HPC clusters mi50. To get computing resources shourtly, I use multiple cpu-nodes as workers and the parameter server instead of multiple-gpus(will be hard to get resources).  
 
 `2`:**Code Approach**: Using torch.distributed and mpi as backend to build the communication scheme. Run the code on NYU HPC with multiple nodes. Single cpu/task per node. 
 
@@ -61,6 +61,8 @@ As for the `NBSSGD` scheme,  I will take single PS parameter update as example: 
 ## Main Result (TO BE FINISHED. WILL FINISH BEFORE PRE)
 
 As we abserved(Experiment are executed based on `RESNET50` and `CIFAR10`, 4 workers and 1 paramerter server):
+
+`Important: results are got from the average among 5 experiments with the same configurations `
 
 - Non-blocking SGD has simiar accuracy with SGD and much higher than ASGD [fig4]
 - Non-blocking SGD has similar TTA with ASGD and much quicker than SGD [fig5]
@@ -80,7 +82,7 @@ As we abserved(Experiment are executed based on `RESNET50` and `CIFAR10`, 4 work
 
 ## How to Run the Code(TO BE FINISHED, MORE CODE WILL BE UPLOADED)
 
-Use sbatch to upload job to HPC. run `sbatch run.s` to submit the job. change the commend `mpirun -n 5 python ./test.py ` to the number of workers you want. Default worker is 5.
+Use sbatch to upload job to HPC. run `sbatch run.s` to submit the job. change the commend `mpirun -n 5 python ./test.py ` to the number of workers you want. Default worker is 5. Some Codes are reused from official resources
 
 `Code Structure:`
 
@@ -90,18 +92,33 @@ Use sbatch to upload job to HPC. run `sbatch run.s` to submit the job. change th
 - `run.s`: the sbatch file
 
 
--  `config.py`: configration file using argparse to difine args
+- `config.py`: configration file using argparse to define args
 
-- `data_loader`:load data to the model
+
+- `data_loader`:load data to the model. Data are partitioned for multiple nodes.
+
 
 - `parameter_server.py`: implement parameter server using mpi and pytorch
 
+
 - `serialization`: pull parameters and push parameters from the server
 
-- `more`: more files will be added: function file to get accuracy, TTA, and draw pictures, etc.
 
-  ​
+- `optimizer`: Optimizer designed for mutiple nodes training. More Optimizer will be added.
 
+
+- `resnet`: The basic model of resnet. `resnet50` will be used as trainning method.
+
+
+- `messaging`: Utilize MPI to  implement functions: send message/ Listen message/ broadcast message/ receive message.
+
+
+- `more`: more utils will be added: function file to get accuracy, TTA, and draw pictures, etc.
+
+`Most IMPORTANT!!`
+
+- `mpi virtual env` is very hard to set up!!! To avid system/ enviroment error, here are two files to test MPI+torch basic functions.
+- `test.py`and `test.s`. use `sbatch test.s` to run `test.py`. This will check whether MPI function available or not.
 
 
 ## Further works to do

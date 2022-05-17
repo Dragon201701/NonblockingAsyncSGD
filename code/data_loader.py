@@ -2,84 +2,45 @@ import os
 from random import Random
 import pandas as pd
 from PIL import Image
-
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 import torch.distributed as dist
+from torchvision.datasets import CIFAR10
 
 
-def get_data_loader(args):
-    data_transforms = transforms.Compose([
-        transforms.Resize((32, 32)),
-        transforms.ToTensor()
-    ])
-    dataset = KaggleAmazonDataset(args.data, data_transforms)
-    train_loader = DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    return train_loader
+"""
+This file is used to Partition data and allocate them to different workers.
+The code is reused from torch official document. Reference： https://pytorch.org/tutorials/intermediate/dist_tuto.html
+Dataset Partition helper is from official document.
+"""
 
 
+""" Partitioning MNIST """
 def partition_dataset(args):
-    data_transforms = transforms.Compose([
-        transforms.Resize((32, 32)),
-        transforms.ToTensor()
+    CIFAR10transform = transforms.Compose([
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010])
     ])
-    dataset = KaggleAmazonDataset(args.data, data_transforms)
-    size = dist.get_world_size()
-    partition_sizes = [1.0 / (size - 1) for _ in range(1, size)]
+    dataset = CIFAR10('./data', train=True, download=True,
+                             transform=CIFAR10transform)
+
+    size = dist.get_world_size() - 1
+    bsz = args.batch_size / float(size)
+    bsz = int(bsz)
+    partition_sizes = [1.0 / size for _ in range(size)]
     partition = DataPartitioner(dataset, partition_sizes)
-    partition = partition.use(dist.get_rank()-1)
-    train_set = DataLoader(partition, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    return train_set
+    partition = partition.use(dist.get_rank() - 1)
+    #train_set = DataLoader(partition, batch_size=bsz, shuffle=True, num_workers=args.num_workers)
+    train_set = DataLoader(partition, batch_size=bsz, shuffle=True)
+    return train_set, bsz
 
 
-class KaggleAmazonDataset(Dataset):
-    """Face Landmarks dataset."""
 
-    def __init__(self, root_dir, transform=None):
-        """
-        Args:
-            csv_file (string): Path to the csv file with annotations.
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        self.root_dir = root_dir
-        self.transform = transform
-
-        train_csv = os.path.join(root_dir, 'train.csv')
-        train_df = pd.read_csv(train_csv)
-        self.x_train = train_df['image_name']
-        self.y_train = train_df['tags']
-
-    def __len__(self):
-        return len(self.x_train.index)
-
-    def _load_image(self, path):
-        with open(path, 'rb') as f:
-            img = Image.open(f)
-            return img.convert('RGB')
-
-    def __getitem__(self, idx):
-        img_name = os.path.join(self.root_dir, 'train-jpg',
-                                self.x_train[idx]+'.jpg')
-        image = self._load_image(img_name)
-        labels = [0]*17
-        positive = self.y_train[idx].split()
-        positive = [int(s) for s in positive]
-
-        labels = torch.zeros(17)
-        labels[positive] = 1
-
-        if self.transform:
-            image = self.transform(image)
-
-        return image, labels
-
-
+""" Dataset partitioning helper """
 class Partition(object):
-    """ Dataset partitioning helper """
 
     def __init__(self, data, index):
         self.data = data
@@ -103,6 +64,7 @@ class DataPartitioner(object):
         data_len = len(data)
         indexes = [x for x in range(0, data_len)]
         rng.shuffle(indexes)
+
         for frac in sizes:
             part_len = int(frac * data_len)
             self.partitions.append(indexes[0:part_len])
@@ -110,3 +72,4 @@ class DataPartitioner(object):
 
     def use(self, partition):
         return Partition(self.data, self.partitions[partition])
+

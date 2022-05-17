@@ -1,13 +1,13 @@
 #!/bin/bash
 
 #SBATCH --job-name=HPMLproject
-#SBATCH --nodes=5
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=05:00:00
 #SBATCH --mem=64GB
 #SBATCH --partition=mi50
-#SBATCH --output=run.txt
+#SBATCH --output=test2.out
 
 
 
@@ -21,9 +21,6 @@ source activate mpienv
 
 cd /scratch/hh2537/pytorch
 
-num_worker=5
-n_step=300
-out_file=logs/lab4_$num_worker-$n_step.out 
 
-mpirun -n $num_worker python main.py
+mpirun -n 2 python ./test.py 
 
